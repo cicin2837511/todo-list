@@ -1,116 +1,102 @@
-use serde::{Deserialize, Serialize};
-use std::fs;
+use serde::{Serialize, Deserialize};
+use eframe::egui;
+use std::fs::{self, OpenOptions};
 
-#[derive(Debug, Deserialize, Serialize)]
+fn main() -> eframe::Result {
+    eframe::run_native("My egui App", eframe::NativeOptions::default(), Box::new(|cc| Ok(Box::new(TodoList::new(cc)))))
+}
+
+#[derive(Serialize, Deserialize)]
 struct Task {
-    id: u32,
     title: String
 }
 
-const PATH: &str = "./src/data.json";
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let tasks: Vec<Task> = parse_json_tasks()?;
-    window_loop(tasks)?;
-    Ok(())
+#[derive(Default)]
+struct TodoList {
+    input: String,
+    tasks: Vec<Task>,
+    initialized: bool
 }
 
-fn parse_json_tasks() -> Result<Vec<Task>, Box<dyn std::error::Error>> {
-    let json = fs::read_to_string(&PATH)?;
-    if json.trim().is_empty() {
-        return Ok(Vec::new());
+impl TodoList {
+    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        Self::default()
     }
-    let tasks: Vec<Task> = serde_json::from_str(&json)?;
-    Ok(tasks)
-}
 
-fn tasks_add(tasks: &mut Vec<Task>, title: String) -> Result<(), Box<dyn std::error::Error>> {
-    tasks.push(Task {
-        id: tasks.len() as u32 + 1,
-        title: title
-    });
-    let json = serde_json::to_string_pretty(&tasks)?;
-    fs::write(PATH, json)?;
-    Ok(())
-}
+    fn add_item(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.tasks.push(Task {
+            title: self.input.clone()
+        });
+        self.save_to_json()?;
+        Ok(())
+    }
 
-fn tasks_remove(tasks: &mut Vec<Task>, id: u32) -> Result<(), Box<dyn std::error::Error>> {
-    tasks.retain(|task| task.id != id);
-    let json = serde_json::to_string_pretty(&tasks)?;
-    fs::write(PATH, json)?;
-    Ok(())
-}
+    fn remove_item(&mut self, i: usize) -> Result<(), Box<dyn std::error::Error>> {
+        self.tasks.remove(i);
+        self.save_to_json()?;
+        Ok(())
+    }
 
-fn tasks_remove_all(tasks: &mut Vec<Task>) -> Result<(), Box<dyn std::error::Error>> {
-    tasks.clear();
-    let json = serde_json::to_string_pretty(&tasks)?;
-    fs::write(PATH, json)?;
-    Ok(())
-}
+    fn json_to_tasks(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let contents = fs::read_to_string("tasks.json")?;
+        self.tasks = serde_json::from_str(&contents)?;
+        Ok(())
+    }
 
-fn window_loop(mut tasks: Vec<Task>) -> eframe::Result {
-    let mut taskname = String::new();
-    eframe::run_simple_native("My Window", Default::default(), move |ctx, _frame| {
-        let _ = change_font_family("/usr/share/fonts/TTF/HackNerdFont-Bold.ttf".to_string(), ctx);
-        change_font_size(30.0, ctx);
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn save_to_json(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open("tasks.json")?;
+        serde_json::to_writer_pretty(&file, &self.tasks)?;
+        Ok(())
+    }
+
+    fn list_tasks(&mut self, ui: &mut egui::Ui) -> Result<(), Box<dyn std::error::Error>> {
+        let mut remove = None;
+        for (i, task) in self.tasks.iter().enumerate() {
             ui.horizontal(|ui| {
-                ui.text_edit_singleline(&mut taskname);
-                if ui.button("add").clicked() && !taskname.trim().is_empty() {
-                    let _ = tasks_add(&mut tasks, taskname.clone());
-                    taskname.clear();
+                ui.label(&task.title);
+                if ui.button("X").clicked() {
+                    remove = Some(i);
                 }
             });
-            if ui.button("remove all").clicked() {
-                let _ = tasks_remove_all(&mut tasks);
+        }
+        if let Some(i) = remove {
+            self.remove_item(i)?;
+        }
+        Ok(())
+    }
+
+    fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if !self.initialized {
+            self.initialized = true;
+            self.json_to_tasks()?;
+        }
+        Ok(())
+    }
+
+    fn render(&mut self, ui: &mut egui::Ui) -> Result<(), Box<dyn std::error::Error>> {
+        ui.horizontal(|ui| -> Result<(), Box<dyn std::error::Error>> {
+            ui.text_edit_singleline(&mut self.input);
+            if ui.button("Add Item").clicked() && !self.input.is_empty() {
+                self.add_item()?;
+                self.input.clear();
             }
-            let mut tasks_to_remove = None;
-            for task in &tasks {
-                ui.horizontal(|ui| {
-                    ui.label(&task.title);
-                    if ui.button("X").clicked() {
-                        tasks_to_remove = Some(task.id);
-                    }
-                });
-            }
-            if let Some(id) = tasks_to_remove {
-                let _ = tasks_remove(&mut tasks, id);
-            }
+            Ok(())
+        }).inner?;
+        self.list_tasks(ui)?;
+        Ok(())
+    }
+}
+
+impl eframe::App for TodoList {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ui, |ui| -> Result<(), Box<dyn std::error::Error>> {
+            self.initialize()?;
+            self.render(ui)?;
+            Ok(())
         });
-    })
-}
-
-fn change_font_family(path: String, ctx: &egui::Context) -> Result<(), std::io::Error> {
-    let mut fonts = egui::FontDefinitions::default();
-    fonts.font_data.insert(
-        "font".to_owned(),
-        egui::FontData::from_owned(
-            std::fs::read(path)?
-        ).into(),
-    );
-    fonts
-        .families
-        .entry(egui::FontFamily::Proportional)
-        .or_default()
-        .insert(0, "font".to_owned());
-    ctx.set_fonts(fonts);
-    Ok(())
-}
-
-fn change_font_size(size: f32, ctx: &egui::Context) {
-    let mut style = (*ctx.style()).clone();
-    style.text_styles.insert(
-        egui::TextStyle::Body,
-        egui::FontId::new(size, egui::FontFamily::Proportional),
-    );
-    style.text_styles.insert(
-        egui::TextStyle::Button,
-        egui::FontId::new(size, egui::FontFamily::Proportional),
-    );
-    style.text_styles.insert(
-        egui::TextStyle::Heading,
-        egui::FontId::new(30.0, egui::FontFamily::Proportional),
-    );
-    ctx.set_style(style);
-
+    }
 }
