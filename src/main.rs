@@ -9,7 +9,8 @@ fn main() -> eframe::Result {
 
 #[derive(Serialize, Deserialize)]
 struct Task {
-    title: String
+    title: String,
+    done: bool
 }
 
 #[derive(Default)]
@@ -37,7 +38,8 @@ impl TodoList {
 
     fn add_item(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.tasks.push(Task {
-            title: self.input.clone()
+            title: self.input.clone(),
+            done: false
         });
         self.save_to_json()?;
         Ok(())
@@ -67,12 +69,14 @@ impl TodoList {
 
     fn list_tasks(&mut self, ui: &mut egui::Ui) -> Result<(), Box<dyn std::error::Error>> {
         let mut remove = None;
+        let mut changed = false;
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                for (i, task) in self.tasks.iter().enumerate() {
+                for (i, task) in self.tasks.iter_mut().enumerate() {
                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                        let x = egui::Button::new(RichText::new("X").color(Color32::from_hex("#fbf1c7").unwrap())).fill(Color32::from_hex("#cc241d").unwrap());
+                        let x = egui::Button::new(RichText::new("X").color(Color32::from_hex("#fbf1c7").unwrap()))
+                            .fill(Color32::from_hex("#cc241d").unwrap());
                         if ui.add(x).clicked() {
                             remove = Some(i);
                         }
@@ -82,7 +86,12 @@ impl TodoList {
                             .show(ui, |ui| {
                                 ui.set_width(ui.available_width());
                                 ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                                    ui.label(RichText::new(&task.title).color(Color32::from_hex("#d5c4a1").unwrap()));
+                                    let icon = if task.done { "\u{f14a}" } else { "\u{f096}" };
+                                    if ui.add(egui::Button::new(RichText::new(icon).color(Color32::from_hex("#fbf1c7").unwrap())).frame(false)).clicked() {
+                                        task.done = !task.done;
+                                        changed = true;
+                                    }
+                                    ui.label(RichText::new(&task.title).color(Color32::from_hex(if !task.done {"#d5c4a1"} else {"#7c6f64"}).unwrap()));
                                 });
                             });
                     });
@@ -90,6 +99,8 @@ impl TodoList {
             });
         if let Some(i) = remove {
             self.remove_item(i)?;
+        } else if changed {
+            self.save_to_json()?;
         }
         Ok(())
     }
