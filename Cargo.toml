@@ -1,10 +1,10 @@
 [package]
-name = "Todo-List"
+name = "todo-list"
 version = "0.0.1"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 eframe = "0.36.2"
-egui = "0.36.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
