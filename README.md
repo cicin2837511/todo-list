@@ -1,5 +1,6 @@
 # Todo list v0.0.1
 A simple todo-list application written in rust with egui.
+![Screenshot of the todo list](assets/images/screenshot.png)
 ## Capabilities
 - Add tasks
 - Remove tasks
